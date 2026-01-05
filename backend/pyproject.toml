@@ -1,0 +1,16 @@
+[project]
+name = "real-time-object-tracker"
+version = "0.1.0"
+description = "Real-time object detection and tracking using YOLOv8 and SORT"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "filterpy>=1.4.5",
+    "lap>=0.5.12",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+    "ultralytics>=8.3.239",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-multipart>=0.0.9",
+]
