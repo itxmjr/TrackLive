@@ -42,7 +42,6 @@ def iou(bbox1: np.ndarray, bbox2: np.ndarray) -> float:
     area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
     union = area1 + area2 - intersection
     
-    # Avoid division by zero
     if union <= 0:
         return 0.0
     
@@ -135,13 +134,8 @@ class KalmanBoxTracker:
             class_id: Detected class ID
             class_name: Detected class name
         """
-        # Initialize Kalman Filter
-        # State: [cx, cy, area, ratio, vx, vy, v_area] - 7 dimensions
-        # Measurement: [cx, cy, area, ratio] - 4 dimensions
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
         
-        # State transition matrix (constant velocity model)
-        # Next state = current state + velocity * dt
         self.kf.F = np.array([
             [1, 0, 0, 0, 1, 0, 0],  # cx' = cx + vx
             [0, 1, 0, 0, 0, 1, 0],  # cy' = cy + vy
@@ -152,7 +146,6 @@ class KalmanBoxTracker:
             [0, 0, 0, 0, 0, 0, 1],  # v_area' = v_area
         ])
         
-        # Measurement matrix (we observe cx, cy, area, ratio)
         self.kf.H = np.array([
             [1, 0, 0, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0, 0],
@@ -160,34 +153,27 @@ class KalmanBoxTracker:
             [0, 0, 0, 1, 0, 0, 0],
         ])
         
-        # Measurement noise covariance
         self.kf.R[2:, 2:] *= 10.0  # Area and ratio are less reliable
         
-        # Initial covariance - high uncertainty for velocities
         self.kf.P[4:, 4:] *= 1000.0
         self.kf.P *= 10.0
         
-        # Process noise covariance
         self.kf.Q[-1, -1] *= 0.01  # Area velocity is very stable
         self.kf.Q[4:, 4:] *= 0.01
         
-        # Initialize state with first detection
         self.kf.x[:4] = convert_bbox_to_z(bbox)
         
-        # Track metadata
         self.id = KalmanBoxTracker._count
         KalmanBoxTracker._count += 1
         
         self.class_id = class_id
         self.class_name = class_name
         
-        # Track lifecycle
         self.hits = 1           # Total successful matches
         self.hit_streak = 1     # Consecutive matches
         self.age = 0            # Frames since creation
         self.time_since_update = 0  # Frames since last match
         
-        # History for trajectory visualization
         self.history: List[np.ndarray] = []
     
     def predict(self) -> np.ndarray:
@@ -197,20 +183,17 @@ class KalmanBoxTracker:
         Returns:
             Predicted bounding box [x1, y1, x2, y2]
         """
-        # Handle negative area prediction
         if self.kf.x[6] + self.kf.x[2] <= 0:
             self.kf.x[6] *= 0.0
         
         self.kf.predict()
         self.age += 1
         
-        # Reset hit streak if no recent update
         if self.time_since_update > 0:
             self.hit_streak = 0
         
         self.time_since_update += 1
         
-        # Store prediction in history
         predicted_bbox = self.get_state()
         self.history.append(predicted_bbox)
         
@@ -227,7 +210,6 @@ class KalmanBoxTracker:
         self.hits += 1
         self.hit_streak += 1
         
-        # Update Kalman filter with measurement
         self.kf.update(convert_bbox_to_z(bbox))
     
     def get_state(self) -> np.ndarray:
@@ -244,7 +226,7 @@ class KalmanBoxTracker:
 class Track:
     """
     Output representation of a tracked object.
-    
+
     Clean interface for downstream consumers.
     """
     track_id: int
@@ -253,7 +235,8 @@ class Track:
     class_name: str
     hits: int
     age: int
-    
+    trail: list = field(default_factory=list)
+
     @property
     def xyxy(self) -> tuple[int, int, int, int]:
         """Return bbox as integer tuple."""
@@ -298,48 +281,39 @@ class SORTTracker:
         """
         self.frame_count += 1
         
-        # Handle empty detections
         if len(detections) == 0:
             detections = np.empty((0, 5))
         
-        # Default class info
         if class_ids is None:
             class_ids = np.zeros(len(detections), dtype=int)
         if class_names is None:
             class_names = ["object"] * len(detections)
         
-        # Get predicted locations from existing trackers
         predicted_boxes = []
         trackers_to_remove = []
         
         for i, tracker in enumerate(self.trackers):
             predicted_bbox = tracker.predict()
             
-            # Check for invalid predictions (NaN or negative size)
             if np.any(np.isnan(predicted_bbox)):
                 trackers_to_remove.append(i)
             else:
                 predicted_boxes.append(predicted_bbox)
         
-        # Remove invalid trackers
         for i in reversed(trackers_to_remove):
             self.trackers.pop(i)
         
         predicted_boxes = np.array(predicted_boxes) if predicted_boxes else np.empty((0, 4))
         
-        # Match detections to trackers using IoU
         matched, unmatched_dets, unmatched_trks = self._associate_detections(
             detections[:, :4], predicted_boxes
         )
         
-        # Update matched trackers with assigned detections
         for det_idx, trk_idx in matched:
             self.trackers[trk_idx].update(detections[det_idx, :4])
-            # Update class info (in case of class change or refinement)
             self.trackers[trk_idx].class_id = class_ids[det_idx]
             self.trackers[trk_idx].class_name = class_names[det_idx]
         
-        # Create new trackers for unmatched detections
         for det_idx in unmatched_dets:
             new_tracker = KalmanBoxTracker(
                 detections[det_idx, :4],
@@ -348,28 +322,29 @@ class SORTTracker:
             )
             self.trackers.append(new_tracker)
         
-        # Build output: confirmed tracks only
         active_tracks = []
         trackers_to_remove = []
         
         for i, tracker in enumerate(self.trackers):
-            # Only return tracks that have been confirmed
             if tracker.hit_streak >= self.config.min_hits or self.frame_count <= self.config.min_hits:
                 if tracker.time_since_update < 1:  # Was just updated
+                    trail = [
+                        {"x": float((bbox[0] + bbox[2]) / 2), "y": float((bbox[1] + bbox[3]) / 2)}
+                        for bbox in tracker.history[-30:]
+                    ]
                     active_tracks.append(Track(
                         track_id=tracker.id,
                         bbox=tracker.get_state(),
                         class_id=tracker.class_id,
                         class_name=tracker.class_name,
                         hits=tracker.hits,
-                        age=tracker.age
+                        age=tracker.age,
+                        trail=trail
                     ))
             
-            # Remove dead tracks
             if tracker.time_since_update > self.config.max_age:
                 trackers_to_remove.append(i)
         
-        # Clean up dead trackers
         for i in reversed(trackers_to_remove):
             self.trackers.pop(i)
         
@@ -396,16 +371,12 @@ class SORTTracker:
         if len(detections) == 0:
             return [], [], list(range(len(trackers)))
         
-        # Compute IoU matrix
         iou_matrix = iou_batch(detections, trackers)
         
-        # Hungarian algorithm (scipy uses cost, so we use 1 - IoU)
-        # We want to maximize IoU, which equals minimizing (1 - IoU)
         cost_matrix = 1 - iou_matrix
         
         det_indices, trk_indices = linear_sum_assignment(cost_matrix)
         
-        # Filter matches below threshold
         matched = []
         unmatched_dets = list(range(len(detections)))
         unmatched_trks = list(range(len(trackers)))

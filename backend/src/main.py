@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import logging
 import time
 import sys
 from pathlib import Path
@@ -37,6 +38,8 @@ from .utils.drawing import (
     Colors,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -44,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         description="Real-time Object Detection and Tracking",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    
+
     # Input/Output
     parser.add_argument(
         "--video", "-v",
@@ -63,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Save output video"
     )
-    
+
     # Detector settings
     parser.add_argument(
         "--model",
@@ -85,7 +88,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Filter specific class IDs (e.g., 0 for person, 2 for car)"
     )
-    
+
     # Tracker settings
     parser.add_argument(
         "--max-age",
@@ -105,7 +108,7 @@ def parse_args() -> argparse.Namespace:
         default=0.3,
         help="Minimum IoU for matching detections to tracks"
     )
-    
+
     # Display settings
     parser.add_argument(
         "--scale",
@@ -118,7 +121,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable display window (useful for headless processing)"
     )
-    
+
     return parser.parse_args()
 
 
@@ -136,10 +139,10 @@ def create_video_writer(
         fps,
         (width, height)
     )
-    
+
     if not writer.isOpened():
         raise RuntimeError(f"Failed to create video writer: {output_path}")
-    
+
     return writer
 
 
@@ -147,178 +150,188 @@ def run_pipeline(
     video_path: Path,
     config: Config,
     output_path: Path | None = None,
-    display: bool = True
+    display: bool = True,
+    progress_callback: callable = None
 ) -> dict:
     """
     Run the detection and tracking pipeline.
-    
+
     Args:
         video_path: Input video path
         config: Pipeline configuration
         output_path: Optional output video path
         display: Whether to display results
-        
+        progress_callback: Optional function called with (current_frame, total_frames, stats)
+
     Returns:
         Dictionary with processing statistics
     """
-    # Initialize components
     detector = Detector(config=config.detector)
     tracker = SORTTracker(config=config.tracker)
     video_writer = None
-    
-    # Statistics
+
     stats = {
         "total_frames": 0,
         "total_detections": 0,
         "total_tracks": 0,
         "avg_fps": 0.0,
-        "unique_track_ids": set(),
+        "unique_track_ids": 0,
+        "class_counts": {},
+        "processed_at": time.time(),
+        "frame_tracks": [],
     }
-    
+
     fps_list = []
     frame_time = time.time()
-    
+    unique_ids = set()
+
     try:
         with VideoHandler(video_path, config=config.video) as video:
-            print(f"\n{'='*60}")
-            print(f"  Object Detection & Tracking Pipeline")
-            print(f"{'='*60}")
-            print(f"  Input:      {video_path.name}")
-            print(f"  Resolution: {video.width}x{video.height}")
-            print(f"  FPS:        {video.fps:.2f}")
-            print(f"  Frames:     {video.total_frames}")
-            print(f"  Model:      {config.detector.model_name}")
-            print(f"{'='*60}\n")
-            
-            # Setup output writer
+            logger.info(
+                "Pipeline started — input=%s resolution=%dx%d fps=%.2f frames=%d model=%s",
+                video_path.name, video.width, video.height, video.fps,
+                video.total_frames, config.detector.model_name,
+            )
+
             if output_path:
-                video_writer = create_video_writer(
-                    output_path,
-                    video.width,
-                    video.height,
-                    video.fps
-                )
-                print(f"Saving output to: {output_path}")
-            
-            # Warmup
-            first_frame_data = next(video.frames())
-            detector.warmup(first_frame_data.frame)
-            
-            # Reset video
-            video.close()
-            video.open()
-            
-            # Main processing loop
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+                    video_writer = cv2.VideoWriter(
+                        str(output_path),
+                        fourcc,
+                        video.fps,
+                        (video.width, video.height)
+                    )
+                    if not video_writer.isOpened():
+                        raise Exception("avc1 failed")
+                except:
+                    logger.warning("avc1 codec failed, falling back to mp4v")
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    video_writer = cv2.VideoWriter(
+                        str(output_path),
+                        fourcc,
+                        video.fps,
+                        (video.width, video.height)
+                    )
+
+                if not video_writer.isOpened():
+                    raise RuntimeError(f"Failed to create video writer: {output_path}")
+                logger.info("Saving output to: %s", output_path)
+
+            try:
+                first_frame_data = next(video.frames())
+                detector.warmup(first_frame_data.frame)
+                video.close()
+                video.open()
+            except StopIteration:
+                logger.error("Video has no frames")
+                return stats
+
             for frame_data in video.frames():
-                # Calculate FPS
                 current_time = time.time()
                 fps = 1.0 / (current_time - frame_time + 1e-6)
                 frame_time = current_time
                 fps_list.append(fps)
-                
-                # 1. DETECT
+
                 detections = detector.detect(frame_data.frame)
-                
-                # 2. PREPARE detections for tracker
+
                 if detections:
                     det_array = np.array([d.to_tracker_format() for d in detections])
                     class_ids = np.array([d.class_id for d in detections])
                     class_names = [d.class_name for d in detections]
+                    for d in detections:
+                        stats["class_counts"][d.class_name] = stats["class_counts"].get(d.class_name, 0) + 1
                 else:
                     det_array = np.empty((0, 5))
                     class_ids = np.array([])
                     class_names = []
-                
-                # 3. TRACK
+
                 tracks = tracker.update(det_array, class_ids, class_names)
-                
-                # 4. VISUALIZE
+
                 output_frame = frame_data.frame.copy()
-                
                 for track in tracks:
-                    draw_track(
-                        output_frame,
-                        track.xyxy,
-                        track.track_id,
-                        label=track.class_name
-                    )
-                    stats["unique_track_ids"].add(track.track_id)
-                
-                # Draw overlays
+                    draw_track(output_frame, track.xyxy, track.track_id, label=track.class_name)
+                    unique_ids.add(track.track_id)
+                    stats["frame_tracks"].append({
+                        "frame": frame_data.frame_number,
+                        "track_id": track.track_id,
+                        "label": track.class_name,
+                        "x1": float(track.bbox[0]),
+                        "y1": float(track.bbox[1]),
+                        "x2": float(track.bbox[2]),
+                        "y2": float(track.bbox[3]),
+                    })
+
                 draw_fps(output_frame, fps)
-                draw_frame_info(
-                    output_frame,
-                    frame_data.frame_number,
-                    video.total_frames,
-                    len(tracks)
-                )
-                
-                # Draw track count
-                cv2.putText(
-                    output_frame,
-                    f"Tracks: {len(tracks)}",
-                    (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    Colors.CYAN,
-                    2,
-                    cv2.LINE_AA
-                )
-                
-                # 5. OUTPUT
+                draw_frame_info(output_frame, frame_data.frame_number, video.total_frames, len(tracks))
+
                 if video_writer:
                     video_writer.write(output_frame)
-                
+
                 if display:
                     if not video.display(output_frame):
-                        print("\nUser interrupted")
                         break
-                
-                # Update stats
+
                 stats["total_frames"] += 1
                 stats["total_detections"] += len(detections)
                 stats["total_tracks"] += len(tracks)
-                
-                # Progress update every 100 frames
+                stats["unique_track_ids"] = len(unique_ids)
+                stats["avg_fps"] = np.mean(fps_list)
+
+                if progress_callback:
+                    progress_callback(frame_data.frame_number, video.total_frames, stats)
+
                 if frame_data.frame_number % 100 == 0:
                     progress = (frame_data.frame_number / video.total_frames) * 100
-                    print(f"Progress: {progress:.1f}% | Frame: {frame_data.frame_number} | "
-                          f"FPS: {fps:.1f} | Tracks: {len(tracks)}")
-    
+                    logger.info("Progress: %.1f%% | Frame: %d | FPS: %.1f", progress, frame_data.frame_number, fps)
+
     finally:
         if video_writer:
             video_writer.release()
-            print(f"\nOutput saved to: {output_path}")
-    
-    # Finalize stats
-    stats["avg_fps"] = np.mean(fps_list) if fps_list else 0
-    stats["unique_track_ids"] = len(stats["unique_track_ids"])
-    
+
+            if output_path and output_path.exists():
+                temp_output = output_path.with_name(f"temp_{output_path.name}")
+                output_path.rename(temp_output)
+
+                try:
+                    import subprocess
+                    cmd = [
+                        "ffmpeg", "-i", str(temp_output),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        "-preset", "veryfast", "-crf", "23",
+                        "-y", str(output_path)
+                    ]
+                    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    logger.info("FFmpeg remuxing complete: %s", output_path)
+                except Exception as e:
+                    logger.error("FFmpeg remuxing failed: %s", e)
+                    if temp_output.exists() and not output_path.exists():
+                        temp_output.rename(output_path)
+                finally:
+                    if temp_output.exists():
+                        temp_output.unlink()
+
     return stats
 
 
 def print_stats(stats: dict) -> None:
     """Print processing statistics."""
-    print(f"\n{'='*60}")
-    print(f"  Processing Complete!")
-    print(f"{'='*60}")
-    print(f"  Total Frames:      {stats['total_frames']}")
-    print(f"  Average FPS:       {stats['avg_fps']:.2f}")
-    print(f"  Total Detections:  {stats['total_detections']}")
-    print(f"  Unique Tracks:     {stats['unique_track_ids']}")
-    print(f"{'='*60}\n")
+    logger.info(
+        "Processing complete — frames=%d avg_fps=%.2f detections=%d unique_tracks=%d",
+        stats["total_frames"], stats["avg_fps"],
+        stats["total_detections"], stats["unique_track_ids"],
+    )
 
 
 def main() -> None:
     """Main entry point."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = parse_args()
-    
-    # Validate input
+
     if not args.video.exists():
-        print(f"Error: Video not found: {args.video}")
+        logger.error("Video not found: %s", args.video)
         sys.exit(1)
-    
-    # Build configuration from arguments
+
     config = Config(
         detector=DetectorConfig(
             model_name=args.model,
@@ -334,13 +347,11 @@ def main() -> None:
             display_scale=args.scale,
         ),
     )
-    
-    # Determine output path
+
     output_path = None
     if args.save:
         output_path = args.output or args.video.with_stem(f"{args.video.stem}_tracked")
-    
-    # Run pipeline
+
     try:
         stats = run_pipeline(
             video_path=args.video,
@@ -349,12 +360,12 @@ def main() -> None:
             display=not args.no_display,
         )
         print_stats(stats)
-        
+
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user")
+        logger.info("Interrupted by user")
         sys.exit(0)
     except Exception as e:
-        print(f"\nError: {e}")
+        logger.error("Error: %s", e)
         raise
 
 

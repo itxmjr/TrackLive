@@ -5,11 +5,15 @@ Uses ultralytics YOLOv8 for state-of-the-art detection.
 Outputs standardized detection format for tracker consumption.
 """
 
+import logging
+
 import numpy as np
 from dataclasses import dataclass
 from ultralytics import YOLO
 
 from .utils.config import DetectorConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -73,7 +77,6 @@ class Detector:
     for our tracking pipeline.
     """
     
-    # COCO dataset class names (80 classes)
     COCO_CLASSES = [
         "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
         "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
@@ -105,16 +108,14 @@ class Detector:
         
         First call downloads weights automatically if not present.
         """
-        print(f"Loading YOLO model: {self.config.model_name}")
-        
-        # Ultralytics handles download automatically
+        logger.info("Loading YOLO model: %s", self.config.model_name)
+
         self._model = YOLO(self.config.model_name)
-        
-        # Set device
+
         if self.config.device != "auto":
             self._model.to(self.config.device)
-        
-        print(f"Model loaded successfully on {self._get_device()}")
+
+        logger.info("Model loaded successfully on %s", self._get_device())
     
     def _get_device(self) -> str:
         """Get the device model is running on."""
@@ -147,7 +148,6 @@ class Detector:
         
         result = results[0]
         
-        # Extract boxes (if any detections)
         if result.boxes is not None and len(result.boxes) > 0:
             boxes = result.boxes
             
@@ -176,9 +176,8 @@ class Detector:
         if self._model is None:
             self.load_model()
         
-        # Run one inference to warmup
         _ = self.detect(frame)
-        print("Model warmup complete")
+        logger.info("Model warmup complete")
     
     def __repr__(self) -> str:
         return f"Detector(model={self.config.model_name}, device={self._get_device()})"
