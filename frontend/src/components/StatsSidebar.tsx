@@ -1,4 +1,4 @@
-import { Activity, Gauge, Users, Zap, TrendingUp, Clock } from "lucide-react";
+import { Activity, Gauge, Users, TrendingUp, Clock, AlertTriangle, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StatsSidebarProps {
@@ -6,11 +6,25 @@ interface StatsSidebarProps {
   currentFps: number;
   activeIds: number[];
   processingTime: number;
+  crossingsCount?: number;
+  maxDwellMs?: number;
 }
 
-const StatsSidebar = ({ totalTracked, currentFps, activeIds, processingTime }: StatsSidebarProps) => {
+const StatsSidebar = ({
+  totalTracked,
+  currentFps,
+  activeIds,
+  processingTime,
+  crossingsCount = 0,
+  maxDwellMs = 0,
+}: StatsSidebarProps) => {
   const fpsStatus = currentFps >= 25 ? "optimal" : currentFps >= 15 ? "good" : "low";
-  
+
+  const formatDwell = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
   return (
     <div className="glass-panel p-4 lg:p-5 space-y-4 lg:space-y-5 animate-fade-in">
       <div className="flex items-center gap-3 pb-4 border-b border-border/50">
@@ -38,12 +52,14 @@ const StatsSidebar = ({ totalTracked, currentFps, activeIds, processingTime }: S
       </div>
 
       {/* Current FPS */}
-      <div className={cn(
-        "glass-panel p-3 lg:p-4 border transition-all duration-300",
-        fpsStatus === "optimal" && "neon-border-cyan",
-        fpsStatus === "good" && "border-yellow-500/50 shadow-[0_0_15px_hsl(45,100%,50%,0.3)]",
-        fpsStatus === "low" && "border-destructive/50 shadow-[0_0_15px_hsl(0,84%,60%,0.3)]"
-      )}>
+      <div
+        className={cn(
+          "glass-panel p-3 lg:p-4 border transition-all duration-300",
+          fpsStatus === "optimal" && "neon-border-cyan",
+          fpsStatus === "good" && "border-yellow-500/50 shadow-[0_0_15px_hsl(45,100%,50%,0.3)]",
+          fpsStatus === "low" && "border-destructive/50 shadow-[0_0_15px_hsl(0,84%,60%,0.3)]"
+        )}
+      >
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <Gauge className="w-4 h-4 text-neon-magenta" />
@@ -51,27 +67,31 @@ const StatsSidebar = ({ totalTracked, currentFps, activeIds, processingTime }: S
               Current FPS
             </span>
           </div>
-          <span className={cn(
-            "text-xs px-2 py-0.5 rounded-full font-semibold",
-            fpsStatus === "optimal" && "bg-neon-cyan/20 text-neon-cyan",
-            fpsStatus === "good" && "bg-yellow-500/20 text-yellow-400",
-            fpsStatus === "low" && "bg-destructive/20 text-destructive"
-          )}>
+          <span
+            className={cn(
+              "text-xs px-2 py-0.5 rounded-full font-semibold",
+              fpsStatus === "optimal" && "bg-neon-cyan/20 text-neon-cyan",
+              fpsStatus === "good" && "bg-yellow-500/20 text-yellow-400",
+              fpsStatus === "low" && "bg-destructive/20 text-destructive"
+            )}
+          >
             {fpsStatus.toUpperCase()}
           </span>
         </div>
         <div className="flex items-baseline gap-2">
-          <p className={cn(
-            "text-2xl lg:text-3xl font-display font-bold",
-            fpsStatus === "optimal" && "neon-text-cyan",
-            fpsStatus === "good" && "text-yellow-400",
-            fpsStatus === "low" && "text-destructive"
-          )}>
+          <p
+            className={cn(
+              "text-2xl lg:text-3xl font-display font-bold",
+              fpsStatus === "optimal" && "neon-text-cyan",
+              fpsStatus === "good" && "text-yellow-400",
+              fpsStatus === "low" && "text-destructive"
+            )}
+          >
             {currentFps.toFixed(1)}
           </p>
           <span className="text-sm text-muted-foreground">fps</span>
         </div>
-        
+
         {/* FPS Bar */}
         <div className="mt-2 h-1.5 lg:h-2 bg-muted rounded-full overflow-hidden">
           <div
@@ -120,12 +140,31 @@ const StatsSidebar = ({ totalTracked, currentFps, activeIds, processingTime }: S
         </div>
       </div>
 
-      {/* System Status */}
-      <div className="pt-4 border-t border-border/50">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-neon-cyan" />
-          <span className="text-xs font-body text-muted-foreground">
-            GPU Acceleration: <span className="text-neon-cyan font-semibold">Active</span>
+      {/* Tripwire Crossings + Dwell Time Row */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Crossings */}
+        <div className="glass-panel p-3 neon-border-amber">
+          <div className="flex items-center gap-1.5 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-neon-amber" />
+            <span className="text-[10px] font-body text-muted-foreground uppercase tracking-wider">
+              Crossings
+            </span>
+          </div>
+          <span className="text-xl lg:text-2xl font-display font-bold neon-text-amber">
+            {crossingsCount}
+          </span>
+        </div>
+
+        {/* Max Dwell Time */}
+        <div className="glass-panel p-3 neon-border-amber">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Timer className="w-3.5 h-3.5 text-neon-amber" />
+            <span className="text-[10px] font-body text-muted-foreground uppercase tracking-wider">
+              Max Dwell
+            </span>
+          </div>
+          <span className="text-xl lg:text-2xl font-display font-bold neon-text-amber">
+            {formatDwell(maxDwellMs)}
           </span>
         </div>
       </div>

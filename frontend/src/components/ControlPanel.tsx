@@ -1,8 +1,9 @@
-import { Settings, Eye, Sliders, Box } from "lucide-react";
+import { Settings, Eye, Sliders, Box, Filter } from "lucide-react";
 import { Switch } from "./ui/switch";
 import { Slider } from "./ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Label } from "./ui/label";
+import ClassFilterChips from "./ClassFilterChips";
 
 interface ControlPanelProps {
   showTrackHistory: boolean;
@@ -13,6 +14,12 @@ interface ControlPanelProps {
   onIouThresholdChange: (value: number) => void;
   modelSize: string;
   onModelSizeChange: (value: string) => void;
+  classCounts?: Record<string, number>;
+  classIdMap?: Record<string, number>;
+  enabledClasses?: Set<string>;
+  onClassToggle?: (className: string) => void;
+  onEnableAllClasses?: () => void;
+  onDisableAllClasses?: () => void;
 }
 
 const ControlPanel = ({
@@ -24,6 +31,12 @@ const ControlPanel = ({
   onIouThresholdChange,
   modelSize,
   onModelSizeChange,
+  classCounts = {},
+  classIdMap = {},
+  enabledClasses = new Set(),
+  onClassToggle,
+  onEnableAllClasses,
+  onDisableAllClasses,
 }: ControlPanelProps) => {
   return (
     <div className="glass-panel p-4 lg:p-5 space-y-4 lg:space-y-5 animate-slide-in-right">
@@ -143,6 +156,22 @@ const ControlPanel = ({
         <p className="text-xs text-muted-foreground">
           Larger models are more accurate but slower
         </p>
+      </div>
+
+      {/* Class Filter */}
+      <div className="space-y-3 pt-2 border-t border-border/30">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-neon-cyan" />
+          <Label className="font-body font-semibold text-sm">Class Filter</Label>
+        </div>
+        <ClassFilterChips
+          classCounts={classCounts}
+          classIdMap={classIdMap}
+          enabledClasses={enabledClasses}
+          onToggle={onClassToggle ?? (() => {})}
+          onEnableAll={onEnableAllClasses ?? (() => {})}
+          onDisableAll={onDisableAllClasses ?? (() => {})}
+        />
       </div>
     </div>
   );

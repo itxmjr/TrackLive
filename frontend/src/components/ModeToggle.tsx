@@ -19,7 +19,7 @@ const ModeToggle = ({ mode, onModeChange }: ModeToggleProps) => {
         )}
       >
         <Upload className="w-4 h-4" />
-        UPLOAD VIDEO
+        <span className="hidden sm:inline">UPLOAD VIDEO</span>
       </button>
       <button
         onClick={() => onModeChange("live")}
@@ -31,7 +31,7 @@ const ModeToggle = ({ mode, onModeChange }: ModeToggleProps) => {
         )}
       >
         <Video className="w-4 h-4" />
-        LIVE CAMERA
+        <span className="hidden sm:inline">LIVE CAMERA</span>
       </button>
     </div>
   );
