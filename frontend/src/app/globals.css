@@ -207,6 +207,7 @@
     --neon-cyan: 187 100% 42%;
     --neon-magenta: 292 84% 61%;
     --neon-purple: 270 80% 60%;
+    --neon-amber: 45 100% 50%;
     --glass-bg: 220 25% 10%;
     --glass-border: 220 20% 25%;
 
@@ -281,6 +282,22 @@
   .neon-border-magenta {
     border-color: hsl(var(--neon-magenta) / 0.5);
     box-shadow: inset 0 0 10px hsl(var(--neon-magenta) / 0.1), 0 0 15px hsl(var(--neon-magenta) / 0.3);
+  }
+
+  .neon-text-amber {
+    color: hsl(var(--neon-amber));
+    text-shadow: 0 0 10px hsl(var(--neon-amber) / 0.8), 0 0 20px hsl(var(--neon-amber) / 0.5);
+  }
+
+  .neon-border-amber {
+    border-color: hsl(var(--neon-amber) / 0.5);
+    box-shadow: inset 0 0 10px hsl(var(--neon-amber) / 0.1), 0 0 15px hsl(var(--neon-amber) / 0.3);
+  }
+
+  .chip-active-cyan {
+    border-color: hsl(var(--neon-cyan) / 0.7);
+    background: hsl(var(--neon-cyan) / 0.15);
+    box-shadow: 0 0 8px hsl(var(--neon-cyan) / 0.4);
   }
 
   .cyber-grid {

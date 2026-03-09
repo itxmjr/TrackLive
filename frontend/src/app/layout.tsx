@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
@@ -16,9 +16,16 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   weight: ["300", "400", "500", "600", "700", "800"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export const metadata: Metadata = {
-  title: "TrackLive - Real-time Object Tracker",
-  description: "Advanced Real-time Object Detection and Tracking System",
+  title: "TrackLive — Real-Time AI Object Detection & Tracking",
+  description:
+    "Portfolio-grade real-time object detection and tracking powered by YOLOv8 + SORT. Features live WebSocket streaming, trajectory trails, virtual tripwire, class filtering, and CSV export.",
 };
 
 export default function RootLayout({
@@ -32,7 +39,16 @@ export default function RootLayout({
         <TooltipProvider>
           {children}
           <Toaster />
-          <Sonner />
+          <Sonner
+            theme="dark"
+            toastOptions={{
+              style: {
+                background: "hsl(220 25% 8%)",
+                border: "1px solid hsl(187 100% 42% / 0.3)",
+                color: "hsl(200 100% 95%)",
+              },
+            }}
+          />
         </TooltipProvider>
       </body>
     </html>
